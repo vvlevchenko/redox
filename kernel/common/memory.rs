@@ -1,12 +1,10 @@
-// TODO: Doc the rest
-
 pub use common::heap::Memory;
 
 use core::ops::{Index, IndexMut};
 use core::{cmp, intrinsics, mem, ptr};
 
+use sync::Intex;
 
-use scheduler;
 
 use common::paging::PAGE_END;
 
@@ -124,6 +122,8 @@ impl StateArray {
         let b = ptr::read(ptr);
 
         ptr::write(ptr, ((val as u8) << bit) ^ (!(0b11 << bit) & b));
+
+        debug_assert!(self.get(n) == val, "StateArray::set() : Value not set");
     }
 }
 
@@ -137,11 +137,10 @@ impl StateTree {
     /// Get the position of a given node in the tree
     #[inline]
     pub fn pos(&self, idx: usize, level: usize) -> usize {
-        (Block {
+        Block {
             idx: idx,
             level: level,
-        })
-        .pos()
+        }.pos()
     }
 
     /// Set the value of a node
@@ -201,6 +200,7 @@ impl Block {
     /// The parrent of this block
     #[inline]
     pub fn parrent(&self) -> Block {
+        debug_assert!(self.level != 0, "parrent() : Requested parrent of root block");
         Block {
             idx: self.idx / 2,
             level: self.level - 1,
@@ -218,11 +218,17 @@ impl Block {
 
         let idx = (pos + 1 - (1 << (level + 1))) >> (MT_DEPTH - level);
 
+        debug_assert!(idx < 1 << level, "from_pos() : The index (idx) is out of bound (expected lower than 2 ^ level, found {})", idx);
 
-        Block {
+
+        let res = Block {
             level: level,
             idx: idx,
-        }
+        };
+
+        debug_assert!(res.pos() == pos, "from_pos() : The reverse calculation does not match");
+
+        res
     }
 
     /// Convert a pointer to a block
@@ -234,6 +240,11 @@ impl Block {
     #[inline]
     pub fn to_ptr(&self) -> usize {
         HEAP_START + self.pos() * MT_ATOM
+    }
+
+    pub fn check_aligned(self, align: usize) -> Self {
+        debug_assert!(self.to_ptr() % align == 0, "Alignment check failed! {} not aligned {}", self.to_ptr(), align);
+        self
     }
 }
 
@@ -256,6 +267,8 @@ impl MemoryTree {
         self.tree.set(res, MemoryState::Used);
         self.tree.set(res.get_buddy(), MemoryState::Free);
 
+        debug_assert!(res.size() == block.size() / 2, "split() : Block not splitted probably, new block is not half size (size: {}, expected {})", res.size(), block.size());
+
         res
     }
 
@@ -268,6 +281,8 @@ impl MemoryTree {
         let order = ceil_log2(size / MT_ATOM);
         size = (1 << order) * MT_ATOM;
         let level = MT_DEPTH - order - 1;
+
+        debug_assert!(size.is_power_of_two(), "alloc() : Size allocated is not a power of two (size is {})", size);
 
         let mut free = None;
         for i in 0..1 << level {
@@ -304,49 +319,61 @@ impl MemoryTree {
             }
         }
     }
-    
+
 
     /// Allocate of minimum size, size
     pub unsafe fn alloc_align(&self, mut size: usize, align: usize) -> Option<Block> {
-
-        // Disclaimer: I'll not pay for
-        // potential eye damage of the
-        // reader. Continue with caution.
-
-        // TODO Optimize so it does not
-        //      run in O(MFG).
-
 //         if size >= MT_ROOT {
 //             return None;
 //         }
+
         let order = ceil_log2(size / MT_ATOM);
         size = (1 << order) * MT_ATOM;
-        let level = MT_DEPTH - order;
+        let level = MT_DEPTH - order - 1;
 
-        let mut ret = None;
-        for pos in 0..MT_BYTES {
-            let b = Block::from_pos(pos);
+        if align > 4096 {
+            return None; // Yup, aligns too big.
+        }
 
-            if b.to_ptr() % align == 0 && MemoryState::Free == self.tree.get(b) {
-                ret = Some(b);
+        size += size % align;
+
+        debug_assert!(align.is_power_of_two(), "alloc_align() : Align a power of two (size is {})", size);
+        debug_assert!(size.is_power_of_two(), "alloc_align() : Size allocated is not a power of two (size is {})", size);
+
+        let mut free = None;
+        for i in 0..1 << level {
+            if let MemoryState::Free = self.tree.get(Block {
+                level: level,
+                idx: i,
+            }) {
+                free = Some(i);
                 break;
             }
         }
 
-        let mut b = if let Some(b) = ret {
-            b
+        if let Some(n) = free {
+            self.tree.set(Block {
+                              level: level,
+                              idx: n,
+                          },
+                          MemoryState::Used);
+
+            Some(Block {
+                idx: n,
+                level: level,
+            }.check_aligned(align))
         } else {
-            return None;
-        };
-
-        let delta = b.level - level; //level as isize - block.level as isize;
-
-        for i in 0..delta {
-            b = self.split(b);
+            if level == 0 {
+                None
+            } else {
+                // Kernel panic on OOM
+                Some(if let Some(m) = self.alloc(size * 2) {
+                    self.split(m).check_aligned(align)
+                } else {
+                    return None;
+                })
+            }
         }
-
-        Some(b)
-
     }
 
     /// Reallocate a block in an optimal way (by unifing it with its buddy)
@@ -408,6 +435,8 @@ impl MemoryTree {
                 self.dealloc(block.parrent());
             }
         }
+
+        debug_assert!(self.tree.get(block) == MemoryState::Free, "dealloc() : Block not freed!");
     }
 
 }
@@ -431,7 +460,7 @@ pub unsafe fn alloc(size: usize) -> usize {
     let ret;
 
     // Memory allocation must be atomic
-    let reenable = scheduler::start_no_ints();
+    let _intex = Intex::static_lock();
 
 
     unsafe {
@@ -444,8 +473,6 @@ pub unsafe fn alloc(size: usize) -> usize {
         }
     }
 
-    // Memory allocation must be atomic
-    scheduler::end_no_ints(reenable);
 
     // debugln!("Following block allocated: {}", ret);
     ret
@@ -457,7 +484,9 @@ pub unsafe fn alloc_aligned(size: usize, align: usize) -> usize {
     let ret;
 
     // Memory allocation must be atomic
-    let reenable = scheduler::start_no_ints();
+    let _intex = Intex::static_lock();
+
+    let mut size = 0;
 
 
     unsafe {
@@ -470,8 +499,6 @@ pub unsafe fn alloc_aligned(size: usize, align: usize) -> usize {
         }
     }
 
-    // Memory allocation must be atomic
-    scheduler::end_no_ints(reenable);
 
     // debugln!("Following block allocated (align): {}", ret);
 
@@ -491,7 +518,7 @@ pub unsafe fn alloc_size(ptr: usize) -> usize {
 /// Deallocate
 pub unsafe fn dealloc(ptr: usize) {
     // Memory allocation must be atomic
-    let reenable = scheduler::start_no_ints();
+    let _intex = Intex::static_lock();
 
     let b = Block::from_ptr(ptr);
     MT.dealloc(b);
@@ -501,8 +528,6 @@ pub unsafe fn dealloc(ptr: usize) {
 
     // debugln!("Following block deallocated: {}", ptr);
 
-    // Memory allocation must be atomic
-    scheduler::end_no_ints(reenable);
 }
 
 /// Reallocate
@@ -511,10 +536,12 @@ pub unsafe fn realloc(ptr: usize, size: usize) -> usize {
 //         return 0;
 //     }
 
-    let ret;
+    let ret: usize;
 
     // Memory allocation must be atomic
-    let reenable = scheduler::start_no_ints();
+    let _intex = Intex::static_lock();
+
+    let mut ret = 0;
 
     if let Some(mut b) = MT.realloc(Block::from_ptr(ptr), size) {
         ret = b.to_ptr();
@@ -528,8 +555,6 @@ pub unsafe fn realloc(ptr: usize, size: usize) -> usize {
     }
 
 
-    scheduler::end_no_ints(reenable);
-    // debugln!("Following block reallocated: {}", ptr);
 
     ret
 }
@@ -545,12 +570,16 @@ pub unsafe fn realloc_inplace(ptr: usize, size: usize) -> usize {
 }
 
 pub fn memory_used() -> usize {
+    // Memory allocation must be atomic
+    let _intex = Intex::static_lock();
+
     let mut ret = 0;
     unsafe {
         // TODO
 
         // Memory allocation must be atomic
     }
+
     ret
 }
 
@@ -562,5 +591,6 @@ pub fn memory_free() -> usize {
 
         // Memory allocation must be atomic
     }
+
     ret
 }
