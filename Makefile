@@ -1,6 +1,6 @@
 #Modify for different target support
-#ARCH?=i386
-ARCH?=x86_64
+ARCH?=i386
+#ARCH?=x86_64
 
 BUILD=build/$(ARCH)-unknown-redox/debug
 
@@ -149,7 +149,10 @@ apps: filesystem/apps/editor/main.bin \
 filesystem/bin:
 	mkdir -p filesystem/bin/
 
-filesystem/bin/%: crates/coreutils/src/bin/%.rs $(BUILD)/crt0.o $(BUILD)/libstd.rlib
+$(BUILD)/libcoreutils.rlib: crates/coreutils/src/lib.rs $(BUILD)/libstd.rlib
+	$(RUSTC) $(RUSTCFLAGS) --crate-name coreutils --crate-type lib -o $@ $<
+
+filesystem/bin/%: crates/coreutils/src/bin/%.rs $(BUILD)/crt0.o $(BUILD)/libcoreutils.rlib
 	$(RUSTC) $(RUSTCFLAGS) --crate-type bin -o $@ $<
 
 filesystem/bin/%: crates/%/main.rs crates/%/*.rs $(BUILD)/crt0.o $(BUILD)/libstd.rlib
@@ -178,7 +181,6 @@ bins: filesystem/bin \
 		filesystem/bin/init \
 		filesystem/bin/init.rc \
 		filesystem/bin/ion \
-		filesystem/bin/logger \
 		filesystem/bin/login \
 		filesystem/bin/lua \
 		filesystem/bin/ls \
