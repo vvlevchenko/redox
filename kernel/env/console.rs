@@ -10,6 +10,8 @@ use graphics::display::Display;
 use graphics::point::Point;
 use graphics::size::Size;
 
+use sync::WaitQueue;
+
 const BLACK: Color = Color::new(0, 0, 0);
 const RED: Color = Color::new(194, 54, 33);
 const GREEN: Color = Color::new(37, 188, 36);
@@ -24,10 +26,9 @@ pub struct Console {
     pub point: Point,
     pub foreground: Color,
     pub background: Color,
-    pub instant: bool,
     pub draw: bool,
     pub redraw: bool,
-    pub command: Option<String>,
+    pub commands: WaitQueue<String>,
     pub escape: bool,
     pub escape_sequence: bool,
     pub sequence: Vec<String>,
@@ -36,14 +37,13 @@ pub struct Console {
 impl Console {
     pub fn new() -> Console {
         Console {
-            display: unsafe { Display::root() },
+            display: Display::root(),
             point: Point::new(0, 0),
             foreground: WHITE,
             background: BLACK,
-            instant: true,
             draw: false,
             redraw: true,
-            command: None,
+            commands: WaitQueue::new(),
             escape: false,
             escape_sequence: false,
             sequence: Vec::new(),
@@ -194,8 +194,8 @@ impl Console {
                 serial_data.write(8);
             }
         }
-        // If contexts disabled, probably booting up
-        if self.instant && self.draw && self.redraw {
+        
+        if self.draw && self.redraw {
             self.redraw = false;
             if let Some(ref mut display) = self.display {
                 display.flip();

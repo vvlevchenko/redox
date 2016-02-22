@@ -8,7 +8,7 @@ use schemes::pipe::{PipeRead, PipeWrite};
 
 use system::c_string_to_str;
 
-use super::{Error, Result, EBADF, EFAULT, EINVAL, SEEK_CUR, SEEK_END, SEEK_SET};
+use super::{Error, Result, Stat, EBADF, EFAULT, EINVAL, SEEK_CUR, SEEK_END, SEEK_SET};
 
 pub fn do_sys_chdir(path: *const u8) -> Result<usize> {
     let contexts = ::env().contexts.lock();
@@ -22,6 +22,8 @@ pub fn do_sys_chdir(path: *const u8) -> Result<usize> {
 pub fn do_sys_close(fd: usize) -> Result<usize> {
     let contexts = ::env().contexts.lock();
     let current = try!(contexts.current());
+
+    //debugln!("{}: {}: close {}", current.pid, current.name, fd);
 
     for i in 0..unsafe { (*current.files.get()).len() } {
         let mut remove = false;
@@ -49,6 +51,9 @@ pub fn do_sys_dup(fd: usize) -> Result<usize> {
     let resource = try!(current.get_file(fd));
     let new_resource = try!(resource.dup());
     let new_fd = current.next_fd();
+
+    //debugln!("{}: {}: dup {} as {}", current.pid, current.name, fd, new_fd);
+
     unsafe {
         (*current.files.get()).push(ContextFile {
             fd: new_fd,
@@ -63,6 +68,17 @@ pub fn do_sys_fpath(fd: usize, buf: *mut u8, count: usize) -> Result<usize> {
     let current = try!(contexts.current());
     let resource = try!(current.get_file(fd));
     resource.path(unsafe { slice::from_raw_parts_mut(buf, count) })
+}
+
+pub fn do_sys_fstat(fd: usize, stat: *mut Stat) -> Result<usize> {
+    let contexts = ::env().contexts.lock();
+    let current = try!(contexts.current());
+    let resource = try!(current.get_file(fd));
+    if stat as usize > 0 {
+        resource.stat(unsafe { &mut *stat })
+    } else {
+        Err(Error::new(EFAULT))
+    }
 }
 
 pub fn do_sys_fsync(fd: usize) -> Result<usize> {
@@ -103,9 +119,12 @@ pub fn do_sys_mkdir(path: *const u8, flags: usize) -> Result<usize> {
 pub fn do_sys_open(path: *const u8, flags: usize) -> Result<usize> {
     let contexts = ::env().contexts.lock();
     let current = try!(contexts.current());
-    let path_string = current.canonicalize(c_string_to_str(path));
-    let resource = try!(::env().open(&Url::from_string(path_string), flags));
+    let url = Url::from_string(current.canonicalize(c_string_to_str(path)));
+    let resource = try!(::env().open(&url, flags));
     let fd = current.next_fd();
+
+    //debugln!("{}: {}: open {} as {}", current.pid, current.name, url.string, fd);
+
     unsafe {
         (*current.files.get()).push(ContextFile {
             fd: fd,
