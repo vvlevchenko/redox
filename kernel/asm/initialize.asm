@@ -3,20 +3,17 @@ USE16
 
 initialize:
 .fpu: ;enable fpu
+    mov eax, cr0
+    and al, 11110011b
+    or al, 00100010b
+    mov cr0, eax
     mov eax, cr4
     or eax, 0x200
     mov cr4, eax
-    mov eax, 0xB7F
-    push eax
-    fldcw [esp]
-    pop eax
+    fninit
     ret
 
 .sse: ;enable sse
-    mov eax, cr0
-    and al, 11111011b
-    or al, 00000010b
-    mov cr0, eax
     mov eax, cr4
     or ax, 0000011000000000b
     mov cr4, eax
@@ -41,7 +38,7 @@ initialize:
 
 .pit:
     ;initialize the PIT
-    mov ax, 2685 ;this is the divider for the PIT
+    mov ax, 5370 ;this is the divider for the PIT
     out 0x40, al
     rol ax, 8
     out 0x40, al

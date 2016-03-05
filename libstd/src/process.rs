@@ -1,12 +1,12 @@
 use boxed::Box;
-use fs::File;
+use core::mem;
 use io::{Result, Read, Write};
 use ops::DerefMut;
 use string::{String, ToString};
 use vec::Vec;
 
 use system::error::Error;
-use system::syscall::{sys_clone, sys_close, sys_dup, sys_execve, sys_exit, sys_pipe2, sys_waitpid, CLONE_VM, CLONE_VFORK};
+use system::syscall::{sys_clone, sys_close, sys_dup, sys_execve, sys_exit, sys_pipe2, sys_read, sys_write, sys_waitpid, CLONE_VM, CLONE_VFORK};
 
 pub struct ExitStatus {
     status: usize,
@@ -23,37 +23,37 @@ impl ExitStatus {
 }
 
 pub struct ChildStdin {
-    inner: File,
+    fd: usize,
 }
 
 impl Write for ChildStdin {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        self.inner.write(buf)
+        sys_write(self.fd, buf)
     }
 }
 
 pub struct ChildStdout {
-    inner: File,
+    fd: usize,
 }
 
 impl Read for ChildStdout {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        self.inner.read(buf)
+        sys_read(self.fd, buf)
     }
 }
 
 pub struct ChildStderr {
-    inner: File,
+    fd: usize,
 }
 
 impl Read for ChildStderr {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        self.inner.read(buf)
+        sys_read(self.fd, buf)
     }
 }
 
 pub struct Child {
-    pid: isize,
+    pid: usize,
     pub stdin: Option<ChildStdin>,
     pub stdout: Option<ChildStdout>,
     pub stderr: Option<ChildStderr>,
@@ -66,12 +66,7 @@ impl Child {
 
     pub fn wait(&mut self) -> Result<ExitStatus> {
         let mut status: usize = 0;
-        let result = unsafe { sys_waitpid(self.pid, &mut status, 0) } as isize;
-        if result >= 0 {
-            Ok(ExitStatus { status: status })
-        } else {
-            Err(Error::new(-result))
-        }
+        sys_waitpid(self.pid, &mut status, 0).map(|_| ExitStatus { status: status })
     }
 }
 
@@ -134,95 +129,98 @@ impl Command {
         let child_stderr = self.stderr.inner;
         let child_stdout = self.stdout.inner;
         let child_stdin = self.stdin.inner;
-        let child_code = move || -> ! {
-            unsafe {
-                match child_stderr {
-                    StdioType::Piped(read, write) => {
-                        sys_close(2);
-                        sys_dup(write);
-                        sys_close(read);
-                    },
-                    StdioType::Null => {
-                        sys_close(2);
-                    },
-                    _ => ()
-                }
+        let child_code = Box::new(move || -> Result<usize> {
+            match child_stderr {
+                StdioType::Piped(read, write) => {
+                    try!(sys_close(read));
+                    try!(sys_close(2));
+                    try!(sys_dup(write));
+                    try!(sys_close(write));
+                },
+                StdioType::Null => {
+                    try!(sys_close(2));
+                },
+                _ => ()
+            }
 
-                match child_stdout {
-                    StdioType::Piped(read, write) => {
-                        sys_close(1);
-                        sys_dup(write);
-                        sys_close(read);
-                    },
-                    StdioType::Null => {
-                        sys_close(1);
-                    },
-                    _ => ()
-                }
+            match child_stdout {
+                StdioType::Piped(read, write) => {
+                    try!(sys_close(read));
+                    try!(sys_close(1));
+                    try!(sys_dup(write));
+                    try!(sys_close(write));
+                },
+                StdioType::Null => {
+                    try!(sys_close(1));
+                },
+                _ => ()
+            }
 
-                match child_stdin {
-                    StdioType::Piped(read, write) => {
-                        sys_close(0);
-                        sys_dup(read);
-                        sys_close(write);
-                    },
-                    StdioType::Null => {
-                        sys_close(0);
-                    },
-                    _ => ()
-                }
+            match child_stdin {
+                StdioType::Piped(read, write) => {
+                    try!(sys_close(write));
+                    try!(sys_close(0));
+                    try!(sys_dup(read));
+                    try!(sys_close(read));
+                },
+                StdioType::Null => {
+                    try!(sys_close(0));
+                },
+                _ => ()
+            }
 
-                *child_res = sys_execve(path_c.as_ptr(), args_c.as_ptr());
+            unsafe { sys_execve(path_c.as_ptr(), args_c.as_ptr()) }
+        });
+
+        match unsafe { sys_clone(CLONE_VM | CLONE_VFORK) } {
+            Ok(0) => {
+                let error = child_code();
+
+                unsafe { *child_res = Error::mux(error); }
+
                 loop {
-                    sys_exit(127);
+                    let _ = sys_exit(127);
+                }
+            },
+            Ok(pid) => {
+                //Must forget child_code to prevent double free
+                mem::forget(child_code);
+                if let Err(err) = Error::demux(*res) {
+                    Err(err)
+                } else {
+                    Ok(Child {
+                        pid: pid,
+                        stdin: match self.stdin.inner {
+                            StdioType::Piped(read, write) => {
+                                try!(sys_close(read));
+                                Some(ChildStdin {
+                                    fd: write
+                                })
+                            },
+                            _ => None
+                        },
+                        stdout: match self.stdout.inner {
+                            StdioType::Piped(read, write) => {
+                                try!(sys_close(write));
+                                Some(ChildStdout {
+                                    fd: read
+                                })
+                            },
+                            _ => None
+                        },
+                        stderr: match self.stderr.inner {
+                            StdioType::Piped(read, write) => {
+                                try!(sys_close(write));
+                                Some(ChildStderr {
+                                    fd: read
+                                })
+                            },
+                            _ => None
+                        }
+                    })
                 }
             }
-        };
-
-        let parent_code = move |pid: isize| -> Result<Child> {
-            if let Err(err) = Error::demux(*res) {
-                Err(err)
-            } else {
-                Ok(Child {
-                    pid: pid,
-                    stdin: match self.stdin.inner {
-                        StdioType::Piped(read, write) => {
-                            unsafe { sys_close(read); }
-                            Some(ChildStdin {
-                                inner: try!(unsafe { File::from_fd(write) })
-                            })
-                        },
-                        _ => None
-                    },
-                    stdout: match self.stdout.inner {
-                        StdioType::Piped(read, write) => {
-                            unsafe { sys_close(write); }
-                            Some(ChildStdout {
-                                inner: try!(unsafe { File::from_fd(read) })
-                            })
-                        },
-                        _ => None
-                    },
-                    stderr: match self.stderr.inner {
-                        StdioType::Piped(read, write) => {
-                            unsafe { sys_close(write); }
-                            Some(ChildStderr {
-                                inner: try!(unsafe { File::from_fd(read) })
-                            })
-                        },
-                        _ => None
-                    }
-                })
-            }
-        };
-
-        let pid = unsafe { sys_clone(CLONE_VM | CLONE_VFORK) } as isize;
-        if pid == 0 {
-            child_code()
-        } else if pid > 0 {
-            parent_code(pid)
-        } else {
-            Err(Error::new(-pid))
+            Err(err) => Err(err)
         }
     }
 }
@@ -241,7 +239,7 @@ pub struct Stdio {
 impl Stdio {
     pub fn piped() -> Stdio {
         let mut fds = [0; 2];
-        if Error::demux(unsafe { sys_pipe2(fds.as_mut_ptr(), 0) }).is_ok() {
+        if unsafe { sys_pipe2(fds.as_mut_ptr(), 0).is_ok() } {
             Stdio {
                 inner: StdioType::Piped(fds[0], fds[1])
             }
@@ -265,6 +263,6 @@ impl Stdio {
 
 pub fn exit(code: i32) -> ! {
     loop {
-        unsafe { sys_exit(code as isize) };
+        let _ = sys_exit(code as usize);
     }
 }

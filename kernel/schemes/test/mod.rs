@@ -1,13 +1,10 @@
 use alloc::boxed::Box;
 
-use collections::string::String;
+use collections::string::{String, ToString};
 
 use fs::{KScheme, Resource, Url, VecResource};
 
 use system::error::Result;
-
-pub struct TestScheme;
-
 
 #[macro_export]
 macro_rules! test {
@@ -32,29 +29,18 @@ macro_rules! fail {
     )
 }
 
-fn meta_test_woah_fail() -> bool {
-    test!(true == false);
-    test!(false);
-    fail!();
-}
+// Add your test here!
+pub mod get_slice;
+pub mod meta;
 
-fn meta_test_woah() -> bool {
-    test!(true == true);
-    test!(true);
-    succ!();
-}
-
-mod tests {
-    // Add your test here!
-    pub mod get_slice;
-}
+pub struct TestScheme;
 
 impl KScheme for TestScheme {
     fn scheme(&self) -> &str {
         "test"
     }
 
-    fn open(&mut self, _: &Url, _: usize) -> Result<Box<Resource>> {
+    fn open(&mut self, _: Url, _: usize) -> Result<Box<Resource>> {
         let mut string = String::new();
 
         macro_rules! reg_test {
@@ -101,10 +87,10 @@ impl KScheme for TestScheme {
         }
 
         // Add your test here!
-        reg_test!(meta_test_woah, "Testing the testing (wut)");
-        reg_test!(!meta_test_woah_fail, "Testing the fail testing (wut)");
-        reg_test!(tests::get_slice::test, "GetSlice");
+        reg_test!(meta::meta_test_woah, "Testing the testing (wut)");
+        reg_test!(!meta::meta_test_woah_fail, "Testing the fail testing (wut)");
+        reg_test!(get_slice::test, "GetSlice");
 
-        Ok(box VecResource::new("test:", string.into_bytes()))
+        Ok(box VecResource::new("test:".to_string(), string.into_bytes()))
     }
 }

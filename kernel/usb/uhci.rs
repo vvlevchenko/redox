@@ -28,9 +28,6 @@ impl KScheme for Uhci {
             // d("UHCI IRQ\n");
         }
     }
-
-    fn on_poll(&mut self) {
-    }
 }
 
 #[repr(packed)]
@@ -56,7 +53,7 @@ impl Uhci {
         let mut module = box Uhci {
             base: pci.read(0x20) as usize & 0xFFFFFFF0,
             irq: pci.read(0x3C) as u8 & 0xF,
-            frame_list: Memory::new(1024).unwrap(),
+            frame_list: Memory::new_align(1024, 4096).unwrap(),
         };
 
         module.init();
@@ -227,7 +224,7 @@ impl Hci for Uhci {
 
             for td in tds.iter().rev() {
                 while unsafe { volatile_load(td as *const Td).ctrl_sts } & 1 << 23 == 1 << 23 {
-                    unsafe { context_switch(false) };
+                    unsafe { context_switch() };
                 }
                 count += (unsafe { volatile_load(td as *const Td).ctrl_sts } & 0x7FF) as usize;
             }

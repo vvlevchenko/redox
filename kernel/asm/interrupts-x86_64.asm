@@ -38,29 +38,26 @@ interrupts:
 	push rbx
 	push rax
 
+	mov rsi, rsp
+	push rsi
+	mov rdi, qword [.entry]
+	push rdi
+
     mov rax, gdt.kernel_data
     mov ds, rax
     mov es, rax
     mov fs, rax
     mov gs, rax
 
-	mov rdi, qword [.entry]
-	mov rsi, rsp
-
-		;Stack Align
-		mov rbp, rsp
-		and rsp, 0xFFFFFFFFFFFFFFF0
-
 		call qword [.handler]
-
-		;Stack Restore
-		mov rsp, rbp
 
 	mov rax, gdt.user_data | 3 ;[esp + 44] ;Use new SS as DS
     mov ds, rax
     mov es, rax
     mov fs, rax
     mov gs, rax
+
+	add rsp, 16 ; Skip interrupt code and reg pointer
 
 	pop rax
 	pop rbx
@@ -109,7 +106,7 @@ istruc IDTEntry
 	at IDTEntry.offsetl, dw interrupts+(interrupts.second-interrupts.first)*i
 	at IDTEntry.selector, dw gdt.kernel_code
 	at IDTEntry.ist, db 0
-	at IDTEntry.attribute, db attrib.present | attrib.interrupt64
+	at IDTEntry.attribute, db attrib.present | attrib.ring3 | attrib.interrupt64
 	at IDTEntry.offsetm, dw 0
 	at IDTEntry.offseth, dd 0
 	at IDTEntry.reserved, dd 0

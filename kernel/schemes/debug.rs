@@ -2,7 +2,7 @@ use alloc::boxed::Box;
 
 use collections::string::String;
 
-use arch::context::context_switch;
+use core::cmp;
 
 use fs::{KScheme, Resource, Url};
 
@@ -11,62 +11,34 @@ use system::error::Result;
 /// A debug resource
 pub struct DebugResource {
     pub command: String,
-    pub line_toggle: bool,
 }
 
 impl Resource for DebugResource {
     fn dup(&self) -> Result<Box<Resource>> {
         Ok(box DebugResource {
             command: self.command.clone(),
-            line_toggle: self.line_toggle,
         })
     }
 
     fn path(&self, buf: &mut [u8]) -> Result <usize> {
         let path = b"debug:";
 
-        let mut i = 0;
-        while i < buf.len() && i < path.len() {
-            buf[i] = path[i];
-            i += 1;
+        for (b, p) in buf.iter_mut().zip(path.iter()) {
+            *b = *p;
         }
 
-        Ok(i)
+        Ok(cmp::min(buf.len(), path.len()))
     }
 
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        if self.line_toggle {
-            self.line_toggle = false;
-            return Ok(0);
-        }
-
         if self.command.is_empty() {
-            loop {
-                {
-                    let mut console = ::env().console.lock();
-
-                    if console.command.is_some() {
-                        if let Some(ref command) = console.command {
-                            self.command = command.clone();
-                        }
-                        console.command = None;
-                        break;
-                    }
-                }
-
-                unsafe { context_switch(false) };
-            }
+            self.command = ::env().console.lock().commands.receive();
         }
 
-        // TODO: Unicode
         let mut i = 0;
-        while i < buf.len() && !self.command.is_empty() {
+        while i < buf.len() && ! self.command.is_empty() {
             buf[i] = unsafe { self.command.as_mut_vec().remove(0) };
             i += 1;
-        }
-
-        if i > 0 && self.command.is_empty() {
-            self.line_toggle = true;
         }
 
         Ok(i)
@@ -95,10 +67,9 @@ impl KScheme for DebugScheme {
         "debug"
     }
 
-    fn open(&mut self, _: &Url, _: usize) -> Result<Box<Resource>> {
+    fn open(&mut self, _: Url, _: usize) -> Result<Box<Resource>> {
         Ok(box DebugResource {
-            command: String::new(),
-            line_toggle: false,
+            command: String::new()
         })
     }
 }

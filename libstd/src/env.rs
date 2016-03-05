@@ -82,8 +82,8 @@ pub fn current_dir() -> Result<PathBuf> {
 }
 
 /// Method to return the home directory
-pub fn home_dir() -> Result<PathBuf> {
-    get_path_from("/home/")
+pub fn home_dir() -> Option<PathBuf> {
+    get_path_from("/home/").ok()
 }
 
 /// Set the current directory
@@ -100,9 +100,8 @@ pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
                 Ok(path) => {
                     if let Some(path_str) = path.to_str() {
                         let path_c = path_str.to_string() + "\0";
-                        match Error::demux(unsafe { sys_chdir(path_c.as_ptr()) }) {
-                            Ok(_) => Ok(()),
-                            Err(err) => Err(err),
+                        unsafe {
+                            sys_chdir(path_c.as_ptr()).and(Ok(()))
                         }
                     } else {
                         Err(Error::new(ENOENT))

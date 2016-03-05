@@ -1,23 +1,10 @@
 
 use core::ops::{Deref, DerefMut};
-use core::{mem, ptr, slice, str};
+use core::{mem, slice};
 
 use super::error::*;
 use super::syscall::*;
-
-/// Helper function for handling C strings, please do not copy it or make it pub or change it
-fn c_string_to_str<'a>(ptr: *const u8) -> &'a str {
-    if ptr > 0 as *const u8 {
-        let mut len = 0;
-        while unsafe { ptr::read(ptr.offset(len as isize)) } > 0 {
-            len += 1;
-        }
-
-        unsafe { str::from_utf8_unchecked(slice::from_raw_parts(ptr, len)) }
-    } else {
-        ""
-    }
-}
+use super::c_string_to_str;
 
 #[derive(Copy, Clone, Debug, Default)]
 #[repr(packed)]
@@ -50,15 +37,17 @@ pub trait Scheme {
     fn handle(&mut self, packet: &mut Packet) {
         packet.a = Error::mux(match packet.a {
             SYS_OPEN => self.open(c_string_to_str(packet.b as *const u8), packet.c, packet.d),
-            SYS_UNLINK => self.unlink(c_string_to_str(packet.b as *const u8)),
             SYS_MKDIR => self.mkdir(c_string_to_str(packet.b as *const u8), packet.c),
+            SYS_RMDIR => self.rmdir(c_string_to_str(packet.b as *const u8)),
+            SYS_UNLINK => self.unlink(c_string_to_str(packet.b as *const u8)),
 
-            SYS_FPATH => self.path(packet.b, unsafe { slice::from_raw_parts_mut(packet.c as *mut u8, packet.d) }),
             SYS_READ => self.read(packet.b, unsafe { slice::from_raw_parts_mut(packet.c as *mut u8, packet.d) }),
             SYS_WRITE => self.write(packet.b, unsafe { slice::from_raw_parts(packet.c as *const u8, packet.d) }),
             SYS_LSEEK => self.seek(packet.b, packet.c, packet.d),
-            SYS_FSYNC => self.sync(packet.b),
-            SYS_FTRUNCATE => self.truncate(packet.b, packet.c),
+            SYS_FPATH => self.fpath(packet.b, unsafe { slice::from_raw_parts_mut(packet.c as *mut u8, packet.d) }),
+            SYS_FSTAT => self.fstat(packet.b, unsafe { &mut *(packet.c as *mut Stat) }),
+            SYS_FSYNC => self.fsync(packet.b),
+            SYS_FTRUNCATE => self.ftruncate(packet.b, packet.c),
             SYS_CLOSE => self.close(packet.b),
 
             _ => Err(Error::new(ENOSYS))
@@ -73,21 +62,21 @@ pub trait Scheme {
     }
 
     #[allow(unused_variables)]
-    fn unlink(&mut self, path: &str) -> Result<usize> {
-        Err(Error::new(ENOENT))
-    }
-
-    #[allow(unused_variables)]
     fn mkdir(&mut self, path: &str, mode: usize) -> Result<usize> {
         Err(Error::new(ENOENT))
     }
 
-    /* Resource operations */
     #[allow(unused_variables)]
-    fn path(&mut self, id: usize, buf: &mut [u8]) -> Result<usize> {
-        Err(Error::new(EBADF))
+    fn rmdir(&mut self, path: &str) -> Result<usize> {
+        Err(Error::new(ENOENT))
     }
 
+    #[allow(unused_variables)]
+    fn unlink(&mut self, path: &str) -> Result<usize> {
+        Err(Error::new(ENOENT))
+    }
+
+    /* Resource operations */
     #[allow(unused_variables)]
     fn read(&mut self, id: usize, buf: &mut [u8]) -> Result<usize> {
         Err(Error::new(EBADF))
@@ -104,12 +93,22 @@ pub trait Scheme {
     }
 
     #[allow(unused_variables)]
-    fn sync(&mut self, id: usize) -> Result<usize> {
+    fn fpath(&self, id: usize, buf: &mut [u8]) -> Result<usize> {
         Err(Error::new(EBADF))
     }
 
     #[allow(unused_variables)]
-    fn truncate(&mut self, id: usize, len: usize) -> Result<usize> {
+    fn fstat(&self, id: usize, stat: &mut Stat) -> Result<usize> {
+        Err(Error::new(EBADF))
+    }
+
+    #[allow(unused_variables)]
+    fn fsync(&mut self, id: usize) -> Result<usize> {
+        Err(Error::new(EBADF))
+    }
+
+    #[allow(unused_variables)]
+    fn ftruncate(&mut self, id: usize, len: usize) -> Result<usize> {
         Err(Error::new(EBADF))
     }
 

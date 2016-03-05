@@ -8,7 +8,6 @@ use std::fs::{self, File};
 use std::io::{Seek, SeekFrom};
 use std::process::Command;
 use std::string::{String, ToString};
-use std::time::{self, Duration};
 use std::vec::Vec;
 
 use orbclient::{event, BmpFile, Color, EventOption, MouseEvent, Window};
@@ -51,13 +50,15 @@ impl FileTypesInfo {
         file_types.insert("c", FileType::new("C source code", "text-x-csrc"));
         file_types.insert("cpp", FileType::new("C++ source code", "text-x-c++src"));
         file_types.insert("h", FileType::new("C header", "text-x-chdr"));
+        file_types.insert("ion", FileType::new("Ion script", "text-x-script"));
+        file_types.insert("rc", FileType::new("Init script", "text-x-script"));
         file_types.insert("sh", FileType::new("Shell script", "text-x-script"));
         file_types.insert("lua", FileType::new("Lua script", "text-x-script"));
-        file_types.insert("txt",
-                          FileType::new("Plain text document", "text-x-generic"));
-        file_types.insert("md", FileType::new("Markdown document", "text-x-generic"));
-        file_types.insert("toml", FileType::new("TOML document", "text-x-generic"));
-        file_types.insert("json", FileType::new("JSON document", "text-x-generic"));
+        file_types.insert("conf", FileType::new("Config file", "text-x-generic"));
+        file_types.insert("txt", FileType::new("Plain text file", "text-x-generic"));
+        file_types.insert("md", FileType::new("Markdown file", "text-x-generic"));
+        file_types.insert("toml", FileType::new("TOML file", "text-x-generic"));
+        file_types.insert("json", FileType::new("JSON file", "text-x-generic"));
         file_types.insert("REDOX", FileType::new("Redox package", "text-x-generic"));
         file_types.insert("", FileType::new("Unknown file", "unknown"));
         FileTypesInfo { file_types: file_types }
@@ -105,13 +106,11 @@ pub struct FileManager {
     file_sizes: Vec<String>,
     selected: isize,
     last_mouse_event: MouseEvent,
-    click_time: Duration,
     window: Box<Window>,
 }
 
 fn load_icon(path: &str) -> BmpFile {
-    let full_path = "file:///ui/mimetypes/".to_string() + path + ".bmp";
-    BmpFile::from_path(&full_path)
+    BmpFile::from_path(&format!("/ui/mimetypes/{}.bmp", path))
 }
 
 impl FileManager {
@@ -128,7 +127,6 @@ impl FileManager {
                 middle_button: false,
                 right_button: false,
             },
-            click_time: Duration::new(0, 0),
             window: Window::new(-1, -1, 0, 0, "").unwrap(),
         }
     }
@@ -307,11 +305,11 @@ impl FileManager {
                                 match file.seek(SeekFrom::End(0)) {
                                     Ok(size) => {
                                         if size >= 1_000_000_000 {
-                                            format!("{:.1} GB", (size as f64) / 1_000_000_000.0)
+                                            format!("{:.1} GB", (size as u64) / 1_000_000_000)
                                         } else if size >= 1_000_000 {
-                                            format!("{:.1} MB", (size as f64) / 1_000_000.0)
+                                            format!("{:.1} MB", (size as u64) / 1_000_000)
                                         } else if size >= 1_000 {
-                                            format!("{:.1} KB", (size as f64) / 1_000.0)
+                                            format!("{:.1} KB", (size as u64) / 1_000)
                                         } else {
                                             format!("{:.1} bytes", size)
                                         }
@@ -437,13 +435,8 @@ impl FileManager {
                         i += 1;
                     }
 
-                    // Check for double click
                     if mouse_event.left_button {
-                        let click_time = Duration::realtime();
-
-                        if click_time - self.click_time <
-                           Duration::new(0, 500 * time::NANOS_PER_MILLI) &&
-                           self.last_mouse_event.x == mouse_event.x &&
+                        if self.last_mouse_event.x == mouse_event.x &&
                            self.last_mouse_event.y == mouse_event.y {
                             if self.selected >= 0 && self.selected < self.files.len() as isize {
                                 if let Some(file) = self.files.get(self.selected as usize) {
@@ -454,9 +447,6 @@ impl FileManager {
                                     }
                                 }
                             }
-                            self.click_time = Duration::new(0, 0);
-                        } else {
-                            self.click_time = click_time;
                         }
                     }
                     self.last_mouse_event = mouse_event;
@@ -475,7 +465,9 @@ impl FileManager {
     fn main(&mut self, path: &str) {
         let mut current_path = path.to_string();
         self.set_path(path);
-        loop {
+        self.draw_content();
+        'events: loop {
+            let mut redraw = false;
             for event in self.event_loop() {
                 match event {
                     FileManagerCommand::ChangeDir(dir) => {
@@ -489,21 +481,22 @@ impl FileManager {
                         self.set_path(&current_path);
                     }
                     FileManagerCommand::Execute(cmd) => {
-                        Command::new("/apps/launcher/main.bin").arg(&(current_path.clone() + &cmd)).spawn();
+                        Command::new("launcher").arg(&(current_path.clone() + &cmd)).spawn();
                     },
-                    FileManagerCommand::Redraw => (),
-                    FileManagerCommand::Quit => return,
+                    FileManagerCommand::Redraw => redraw = true,
+                    FileManagerCommand::Quit => break 'events,
                 };
+            }
+            if redraw {
                 self.draw_content();
             }
         }
-
     }
 }
 
 fn main() {
     match env::args().nth(1) {
         Some(ref arg) => FileManager::new().main(arg),
-        None => FileManager::new().main("file:/"),
+        None => FileManager::new().main("/home/"),
     }
 }

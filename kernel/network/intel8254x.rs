@@ -1,19 +1,23 @@
 use alloc::boxed::Box;
 
+use arch::memory;
+
 use collections::slice;
 use collections::vec::Vec;
 use collections::vec_deque::VecDeque;
 
 use core::ptr;
 
-use common::{debug, memory};
+use common::debug;
 
 use drivers::pci::config::PciConfig;
 
 use network::common::*;
 use network::scheme::*;
 
-use schemes::{Result, KScheme, Resource, Url};
+use fs::{KScheme, Resource, Url};
+
+use syscall::Result;
 
 use sync::Intex;
 
@@ -116,7 +120,7 @@ impl KScheme for Intel8254x {
         "network"
     }
 
-    fn open(&mut self, _: &Url, _: usize) -> Result<Box<Resource>> {
+    fn open(&mut self, _: Url, _: usize) -> Result<Box<Resource>> {
         Ok(NetworkResource::new(self))
     }
 
@@ -126,10 +130,6 @@ impl KScheme for Intel8254x {
 
             self.sync();
         }
-    }
-
-    fn on_poll(&mut self) {
-        self.sync();
     }
 }
 

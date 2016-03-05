@@ -2,9 +2,13 @@ use common::slice::GetSlice;
 
 use alloc::boxed::Box;
 
+use arch::memory::Memory;
+
 use collections::slice;
 use collections::string::{String, ToString};
 use collections::vec::Vec;
+
+use common::debug;
 
 use core::cmp;
 
@@ -12,9 +16,6 @@ use disk::Disk;
 use disk::ide::Extent;
 
 use fs::redoxfs::{FileSystem, Node, NodeData};
-
-use common::debug;
-use arch::memory::Memory;
 
 use fs::{KScheme, Resource, ResourceSeek, Url, VecResource};
 
@@ -40,22 +41,14 @@ impl Resource for FileResource {
         })
     }
 
-    fn path(&self, buf: &mut [u8]) -> Result <usize> {
-        let mut i = 0;
-
+    fn path(&self, buf: &mut [u8]) -> Result<usize> {
         let path_a = b"file:/";
-        while i < buf.len() && i < path_a.len() {
-            buf[i] = path_a[i];
-            i += 1;
-        }
-
         let path_b = self.node.name.as_bytes();
-        while i < buf.len() && i - path_a.len() < path_b.len() {
-            buf[i] = path_b[i - path_a.len()];
-            i += 1;
+        for (b, p) in buf.iter_mut().zip(path_a.iter().chain(path_b.iter())) {
+            *b = *p;
         }
 
-        Ok(i)
+        Ok(cmp::min(buf.len(), path_a.len() + path_b.len()))
     }
 
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
@@ -241,19 +234,14 @@ impl FileScheme {
 impl KScheme for FileScheme {
     fn on_irq(&mut self, _irq: u8) {
         /*if irq == self.fs.disk.irq {
-            self.on_poll();
         }*/
-    }
-
-    fn on_poll(&mut self) {
-        //self.fs.disk.on_poll();
     }
 
     fn scheme(&self) -> &str {
         "file"
     }
 
-    fn open(&mut self, url: &Url, flags: usize) -> Result<Box<Resource>> {
+    fn open(&mut self, url: Url, flags: usize) -> Result<Box<Resource>> {
         let mut path = url.reference();
         while path.starts_with('/') {
             path = &path[1..];
@@ -293,7 +281,7 @@ impl KScheme for FileScheme {
             }
 
             if list.len() > 0 {
-                Ok(box VecResource::new(&url.string, list.into_bytes()))
+                Ok(box VecResource::new(url.to_string(), list.into_bytes()))
             } else {
                 Err(Error::new(ENOENT))
             }
@@ -364,7 +352,7 @@ impl KScheme for FileScheme {
         }
     }
 
-    fn unlink(&mut self, url: &Url) -> Result<()> {
+    fn unlink(&mut self, url: Url) -> Result<()> {
         let mut ret = Err(Error::new(ENOENT));
 
         let mut path = url.reference();

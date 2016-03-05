@@ -1,5 +1,7 @@
 use alloc::boxed::Box;
 
+use arch::memory;
+
 use collections::slice;
 use collections::string::ToString;
 use collections::vec::Vec;
@@ -7,7 +9,7 @@ use collections::vec_deque::VecDeque;
 
 use core::ptr;
 
-use common::{debug, memory};
+use common::debug;
 
 use drivers::pci::config::PciConfig;
 use drivers::io::{Io, Pio};
@@ -15,7 +17,9 @@ use drivers::io::{Io, Pio};
 use network::common::*;
 use network::scheme::*;
 
-use schemes::{Result, KScheme, Resource, Url};
+use fs::{KScheme, Resource, Url};
+
+use syscall::Result;
 
 use sync::Intex;
 
@@ -105,7 +109,7 @@ impl Rtl8139 {
         let pci_id = unsafe { pci.read(0x00) };
         let revision = (unsafe { pci.read(0x08) } & 0xFF) as u8;
         if pci_id == 0x813910EC && revision < 0x20 {
-            debug::d("Not an 8139C+ compatible chip")
+            debugln!("Not an 8139C+ compatible chip")
         }
 
         let base = unsafe { pci.read(0x10) as usize };
@@ -191,8 +195,6 @@ impl Rtl8139 {
     }
 
     unsafe fn receive_inbound(&mut self) {
-        let base = self.base as u16;
-
         let receive_buffer = self.port.rbstart.read() as usize;
         let mut capr = (self.port.capr.read() + 16) as usize;
         let cbr = self.port.cbr.read() as usize;
@@ -212,9 +214,7 @@ impl Rtl8139 {
             debug::dh(frame_len);
             debug::dl();
 
-            self.inbound
-                .push_back(Vec::from(slice::from_raw_parts(frame_addr as *const u8,
-                                                           frame_len - 4)));
+            self.inbound.push_back(Vec::from(slice::from_raw_parts(frame_addr as *const u8, frame_len - 4)));
 
             capr = capr + frame_len + 4;
             capr = (capr + 3) & (0xFFFFFFFF - 3);
@@ -267,7 +267,7 @@ impl KScheme for Rtl8139 {
         "network"
     }
 
-    fn open(&mut self, _: &Url, _: usize) -> Result<Box<Resource>> {
+    fn open(&mut self, _: Url, _: usize) -> Result<Box<Resource>> {
         Ok(NetworkResource::new(self))
     }
 
@@ -281,10 +281,6 @@ impl KScheme for Rtl8139 {
 
             self.sync();
         }
-    }
-
-    fn on_poll(&mut self) {
-        self.sync();
     }
 }
 

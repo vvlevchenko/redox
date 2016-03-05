@@ -89,7 +89,7 @@ impl Page {
     unsafe fn flush(&self) {
         asm!("invlpg [$0]"
             :
-            : "{eax}"(self.virtual_address)
+            : "{rax}"(self.virtual_address)
             : "memory"
             : "intel", "volatile");
     }
