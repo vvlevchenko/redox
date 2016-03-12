@@ -6,7 +6,7 @@ Documentation can be found [here](http://ticki.github.io/redocs/redox/).
 
 Please make sure you use the **latest nightly** of `rustc` before building (for more troubleshooting, see ["Help! Redox won't compile!"](#compile-help)).
 
-[![Travis Build Status](https://travis-ci.org/redox-os/redox.svg?branch=auto)](https://travis-ci.org/redox-os/redox)
+[![Travis Build Status](https://travis-ci.org/redox-os/redox.svg?branch=master)](https://travis-ci.org/redox-os/redox)
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE.md)
 
 ## Contents
@@ -87,7 +87,7 @@ $ cd redox/
 $ sudo <your package manager> install make nasm qemu
 
 # Install multirust
-$ curl -sf https://raw.githubusercontent.com/brson/multirust/master/blastoff.sh | sh
+$ curl -sf https://raw.githubusercontent.com/brson/multirust/master/quick-install.sh | sh
 
 # Set override toolchain to nightly build
 $ multirust override nightly

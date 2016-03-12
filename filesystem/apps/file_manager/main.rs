@@ -5,7 +5,6 @@ extern crate orbclient;
 use std::{cmp, env};
 use std::collections::BTreeMap;
 use std::fs::{self, File};
-use std::io::{Seek, SeekFrom};
 use std::process::Command;
 use std::string::{String, ToString};
 use std::vec::Vec;
@@ -50,13 +49,15 @@ impl FileTypesInfo {
         file_types.insert("c", FileType::new("C source code", "text-x-csrc"));
         file_types.insert("cpp", FileType::new("C++ source code", "text-x-c++src"));
         file_types.insert("h", FileType::new("C header", "text-x-chdr"));
+        file_types.insert("ion", FileType::new("Ion script", "text-x-script"));
+        file_types.insert("rc", FileType::new("Init script", "text-x-script"));
         file_types.insert("sh", FileType::new("Shell script", "text-x-script"));
         file_types.insert("lua", FileType::new("Lua script", "text-x-script"));
-        file_types.insert("txt",
-                          FileType::new("Plain text document", "text-x-generic"));
-        file_types.insert("md", FileType::new("Markdown document", "text-x-generic"));
-        file_types.insert("toml", FileType::new("TOML document", "text-x-generic"));
-        file_types.insert("json", FileType::new("JSON document", "text-x-generic"));
+        file_types.insert("conf", FileType::new("Config file", "text-x-generic"));
+        file_types.insert("txt", FileType::new("Plain text file", "text-x-generic"));
+        file_types.insert("md", FileType::new("Markdown file", "text-x-generic"));
+        file_types.insert("toml", FileType::new("TOML file", "text-x-generic"));
+        file_types.insert("json", FileType::new("JSON file", "text-x-generic"));
         file_types.insert("REDOX", FileType::new("Redox package", "text-x-generic"));
         file_types.insert("", FileType::new("Unknown file", "unknown"));
         FileTypesInfo { file_types: file_types }
@@ -64,7 +65,7 @@ impl FileTypesInfo {
 
     pub fn description_for(&self, file_name: &str) -> String {
         if file_name.ends_with('/') {
-            self.file_types["/"].description.to_string()
+            self.file_types["/"].description.to_owned()
         } else {
             let pos = file_name.rfind('.').unwrap_or(0) + 1;
             let ext = &file_name[pos..];
@@ -241,7 +242,7 @@ impl FileManager {
     fn get_parent_directory() -> Option<String> {
         if let Ok(parent_dir) = File::open("../") {
             if let Ok(path) = parent_dir.path() {
-                return Some(path.to_string());
+                return Some(path.into_os_string().into_string().unwrap_or("/".to_string()));
             }
         }
 
@@ -283,14 +284,15 @@ impl FileManager {
                     };
 
                     let entry_path = match entry.file_name().to_str() {
-                        Some(path_str) => {
-                            if directory {
-                                path_str.to_string() + "/"
-                            } else {
-                                path_str.to_string()
-                            }
+                        Some(path_str) => if directory {
+                            path_str.to_string() + "/"
+                        } else {
+                            path_str.to_string()
+                        },
+                        None => {
+                            println!("Failed to read file name");
+                            String::new()
                         }
-                        None => "Failed to convert path to string".to_string(),
                     };
 
                     self.files.push(entry_path.clone());
@@ -298,21 +300,17 @@ impl FileManager {
                                          if entry_path.ends_with('/') {
                         FileManager::get_num_entries(&(path.to_string() + &entry_path))
                     } else {
-                        match File::open(&entry_path) {
-                            Ok(mut file) => {
-                                match file.seek(SeekFrom::End(0)) {
-                                    Ok(size) => {
-                                        if size >= 1_000_000_000 {
-                                            format!("{:.1} GB", (size as u64) / 1_000_000_000)
-                                        } else if size >= 1_000_000 {
-                                            format!("{:.1} MB", (size as u64) / 1_000_000)
-                                        } else if size >= 1_000 {
-                                            format!("{:.1} KB", (size as u64) / 1_000)
-                                        } else {
-                                            format!("{:.1} bytes", size)
-                                        }
-                                    }
-                                    Err(err) => format!("Failed to seek: {}", err),
+                        match fs::metadata(&entry_path) {
+                            Ok(metadata) => {
+                                let size = metadata.len();
+                                if size >= 1_000_000_000 {
+                                    format!("{:.1} GB", (size as u64) / 1_000_000_000)
+                                } else if size >= 1_000_000 {
+                                    format!("{:.1} MB", (size as u64) / 1_000_000)
+                                } else if size >= 1_000 {
+                                    format!("{:.1} KB", (size as u64) / 1_000)
+                                } else {
+                                    format!("{:.1} bytes", size)
                                 }
                             }
                             Err(err) => format!("Failed to open: {}", err),
@@ -463,7 +461,9 @@ impl FileManager {
     fn main(&mut self, path: &str) {
         let mut current_path = path.to_string();
         self.set_path(path);
+        self.draw_content();
         'events: loop {
+            let mut redraw = false;
             for event in self.event_loop() {
                 match event {
                     FileManagerCommand::ChangeDir(dir) => {
@@ -477,11 +477,13 @@ impl FileManager {
                         self.set_path(&current_path);
                     }
                     FileManagerCommand::Execute(cmd) => {
-                        Command::new("/apps/launcher/main.bin").arg(&(current_path.clone() + &cmd)).spawn();
+                        Command::new("launcher").arg(&(current_path.clone() + &cmd)).spawn();
                     },
-                    FileManagerCommand::Redraw => (),
+                    FileManagerCommand::Redraw => redraw = true,
                     FileManagerCommand::Quit => break 'events,
                 };
+            }
+            if redraw {
                 self.draw_content();
             }
         }

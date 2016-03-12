@@ -3,6 +3,7 @@ use super::{Resource, Url};
 use alloc::boxed::Box;
 
 use system::error::{Error, Result, ENOENT};
+use system::syscall::Stat;
 
 #[allow(unused_variables)]
 pub trait KScheme {
@@ -10,23 +11,27 @@ pub trait KScheme {
 
     }
 
-    fn on_poll(&mut self) {
-
-    }
-
     fn scheme(&self) -> &str {
         ""
     }
 
-    fn open(&mut self, path: &Url, flags: usize) -> Result<Box<Resource>> {
+    fn open(&mut self, path: Url, flags: usize) -> Result<Box<Resource>> {
         Err(Error::new(ENOENT))
     }
 
-    fn mkdir(&mut self, path: &Url, flags: usize) -> Result<()> {
+    fn mkdir(&mut self, path: Url, flags: usize) -> Result<()> {
         Err(Error::new(ENOENT))
     }
 
-    fn unlink(&mut self, path: &Url) -> Result<()> {
+    fn rmdir(&mut self, path: Url) -> Result<()> {
+        Err(Error::new(ENOENT))
+    }
+
+    fn stat(&mut self, path: Url, stat: &mut Stat) -> Result<()> {
+        Err(Error::new(ENOENT))
+    }
+
+    fn unlink(&mut self, path: Url) -> Result<()> {
         Err(Error::new(ENOENT))
     }
 }

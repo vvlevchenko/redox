@@ -19,12 +19,14 @@ use core::ops::DerefMut;
 
 use fs::Resource;
 
-use syscall::{do_sys_exit, Error, Result, CLONE_FILES, CLONE_FS, CLONE_VM, CLONE_VFORK, EBADF, EFAULT, ENOMEM, ESRCH};
+use syscall::{do_sys_exit, CLONE_FILES, CLONE_FS, CLONE_VM, CLONE_VFORK};
+
+use system::error::{Error, Result, EBADF, EFAULT, ENOMEM, ESRCH};
 
 use sync::WaitMap;
 
 pub const CONTEXT_STACK_SIZE: usize = 1024 * 1024;
-pub const CONTEXT_STACK_ADDR: usize = 0x70000000;
+pub const CONTEXT_STACK_ADDR: usize = 0xB0000000;
 
 pub struct ContextManager {
     pub inner: Vec<Box<Context>>,
@@ -203,6 +205,9 @@ pub unsafe fn context_clone(regs: &Regs) -> Result<usize> {
             let mut kernel_regs = parent.regs;
             kernel_regs.sp = child_regs_addr - extra_size;
 
+            let fx = kernel_stack + CONTEXT_STACK_SIZE;
+            ::memcpy(fx as *mut u8, parent.fx as *const u8, 512);
+
             box Context {
                 pid: clone_pid,
                 ppid: parent.pid,
@@ -221,7 +226,7 @@ pub unsafe fn context_clone(regs: &Regs) -> Result<usize> {
 
                 kernel_stack: kernel_stack,
                 regs: kernel_regs,
-                fx: kernel_stack + CONTEXT_STACK_SIZE,
+                fx: fx,
                 stack: if let Some(ref entry) = parent.stack {
                     let physical_address = memory::alloc(entry.virtual_size);
                     if physical_address > 0 {
@@ -393,7 +398,8 @@ impl ContextMemory {
 
     pub unsafe fn unmap(&mut self) {
         for i in 0..(self.virtual_size + 4095) / 4096 {
-            Page::new(self.virtual_address + i * 4096).map_identity();
+            Page::new(self.virtual_address + i * 4096)
+                .map_kernel_write(self.virtual_address + i * 4096);
         }
     }
 }
@@ -412,50 +418,50 @@ pub struct ContextFile {
 }
 
 pub struct Context {
-// These members are used for control purposes by the scheduler {
-// The PID of the context
+    // These members are used for control purposes by the scheduler {
+    // The PID of the context
     pub pid: usize,
-/// The PID of the parent
+    /// The PID of the parent
     pub ppid: usize,
-/// The name of the context
+    /// The name of the context
     pub name: String,
-/// Indicates that the context is blocked, and should not be switched to
+    /// Indicates that the context is blocked, and should not be switched to
     pub blocked: bool,
-/// Indicates that the context exited
+    /// Indicates that the context exited
     pub exited: bool,
-/// How many times was the context switched to
+    /// How many times was the context switched to
     pub switch: usize,
-/// The number of time slices used
+    /// The number of time slices used
     pub time: usize,
-/// Indicates that the context needs to unblock parent
+    /// Indicates that the context needs to unblock parent
     pub vfork: Option<*mut Context>,
-/// When to wake up
+    /// When to wake up
     pub wake: Option<Duration>,
-// }
+    // }
 
-// These members control the stack and registers and are unique to each context {
-// The kernel stack
+    // These members control the stack and registers and are unique to each context {
+    // The kernel stack
     pub kernel_stack: usize,
-/// The current kernel registers
+    /// The current kernel registers
     pub regs: Regs,
-/// The location used to save and load SSE and FPU registers
+    /// The location used to save and load SSE and FPU registers
     pub fx: usize,
-/// The context stack
+    /// The context stack
     pub stack: Option<ContextMemory>,
-/// Indicates that registers can be loaded (they must be saved first)
+    /// Indicates that registers can be loaded (they must be saved first)
     pub loadable: bool,
-// }
+    // }
 
-// These members are cloned for threads, copied or created for processes {
-/// Program working directory, cloned for threads, copied or created for processes. Modified by chdir
+    // These members are cloned for threads, copied or created for processes {
+    /// Program working directory, cloned for threads, copied or created for processes. Modified by chdir
     pub cwd: Arc<UnsafeCell<String>>,
-/// Program memory, cloned for threads, copied or created for processes. Modified by memory allocation
+    /// Program memory, cloned for threads, copied or created for processes. Modified by memory allocation
     pub memory: Arc<UnsafeCell<Vec<ContextMemory>>>,
-/// Program files, cloned for threads, copied or created for processes. Modified by file operations
+    /// Program files, cloned for threads, copied or created for processes. Modified by file operations
     pub files: Arc<UnsafeCell<Vec<ContextFile>>>,
-// }
+    // }
 
-/// Exit statuses of children
+    /// Exit statuses of children
     pub statuses: WaitMap<usize, usize>,
 }
 
@@ -490,6 +496,8 @@ impl Context {
     }
 
     pub unsafe fn root() -> Box<Self> {
+        let fx = memory::alloc(512);
+
         box Context {
             pid: Context::next_pid(),
             ppid: 0,
@@ -503,7 +511,7 @@ impl Context {
 
             kernel_stack: 0,
             regs: Regs::default(),
-            fx: memory::alloc(512),
+            fx: fx,
             stack: None,
             loadable: false,
 
@@ -521,6 +529,8 @@ impl Context {
         let mut regs = Regs::default();
         regs.sp = kernel_stack + CONTEXT_STACK_SIZE - 128;
 
+        let fx = kernel_stack + CONTEXT_STACK_SIZE;
+
         let mut ret = box Context {
             pid: Context::next_pid(),
             ppid: 0,
@@ -534,7 +544,7 @@ impl Context {
 
             kernel_stack: kernel_stack,
             regs: regs,
-            fx: kernel_stack + CONTEXT_STACK_SIZE,
+            fx: fx,
             stack: None,
             loadable: false,
 
@@ -733,6 +743,8 @@ impl Context {
         self.loadable = true;
         if next.loadable {
             asm!("fxrstor [$0]" : : "r"(next.fx) : "memory" : "intel", "volatile");
+        }else{
+            asm!("fninit" : : : "memory" : "intel", "volatile");
         }
 
         asm!("pushfd ; pop $0" : "=r"(self.regs.flags) : : "memory" : "intel", "volatile");
@@ -765,6 +777,8 @@ impl Context {
         self.loadable = true;
         if next.loadable {
             asm!("fxrstor [$0]" : : "r"(next.fx) : "memory" : "intel", "volatile");
+        }else{
+            asm!("fninit" : : : "memory" : "intel", "volatile");
         }
 
         asm!("pushfq ; pop $0" : "=r"(self.regs.flags) : : "memory" : "intel", "volatile");

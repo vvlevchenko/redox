@@ -13,6 +13,7 @@ use graphics::display::Display;
 use fs::{KScheme, Resource, ResourceSeek, Url};
 
 use system::error::{Error, Result, EACCES, ENOENT, EINVAL};
+use system::graphics::fast_copy;
 
 pub struct DisplayScheme;
 
@@ -40,22 +41,18 @@ impl Resource for DisplayResource {
     fn path(&self, buf: &mut [u8]) -> Result<usize> {
         let path = self.path.as_bytes();
 
-        let mut i = 0;
-        while i < buf.len() && i < path.len() {
-            buf[i] = path[i];
-            i += 1;
+        for (b, p) in buf.iter_mut().zip(path.iter()) {
+            *b = *p;
         }
 
-        Ok(i)
+        Ok(cmp::min(buf.len(), path.len()))
     }
 
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         if buf.len() >= size_of::<Event>() {
-            let mut i = 0;
-
             let event = ::env().events.receive();
-            unsafe { ptr::write(buf.as_mut_ptr().offset(i as isize) as *mut Event, event) };
-            i += size_of::<Event>();
+            unsafe { ptr::write(buf.as_mut_ptr().offset(0isize) as *mut Event, event) };
+            let mut i = size_of::<Event>();
 
             while i + size_of::<Event>() <= buf.len() {
                 if let Some(event) = ::env().events.inner.lock().pop_front() {
@@ -73,11 +70,11 @@ impl Resource for DisplayResource {
     }
 
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        let size = cmp::max(0, cmp::min(self.display.size as isize - self.seek as isize, buf.len() as isize)) as usize;
+        let size = cmp::max(0, cmp::min(self.display.size as isize - self.seek as isize, (buf.len()/4) as isize)) as usize;
 
         if size > 0 {
             unsafe {
-                Display::copy_run(buf.as_ptr() as usize, self.display.onscreen + self.seek, size);
+                fast_copy(self.display.onscreen.offset(self.seek as isize), buf.as_ptr() as *const u32, size);
             }
         }
 
@@ -110,7 +107,7 @@ impl KScheme for DisplayScheme {
         "display"
     }
 
-    fn open(&mut self, _: &Url, _: usize) -> Result<Box<Resource>> {
+    fn open(&mut self, _: Url, _: usize) -> Result<Box<Resource>> {
         if ::env().console.lock().draw {
             if let Some(display) = Display::root() {
                 ::env().console.lock().draw = false;

@@ -9,7 +9,8 @@ use core::ops::DerefMut;
 
 use system::{c_array_to_slice, c_string_to_str};
 
-use super::{Error, Result, ECHILD};
+use system::error::{Error, Result, ECHILD};
+
 use super::execute::execute;
 
 pub fn do_sys_clone(regs: &Regs) -> Result<usize> {
@@ -30,7 +31,6 @@ pub fn do_sys_execve(path: *const u8, args: *const *const u8) -> Result<usize> {
 ///
 /// Unsafe due to interrupt disabling and raw pointers
 pub fn do_sys_exit(status: usize) -> ! {
-    //TODO: DOUBLE CHECK THIS FUNCTION
     {
         let mut contexts = ::env().contexts.lock();
 

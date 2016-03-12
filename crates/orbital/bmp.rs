@@ -10,7 +10,7 @@ impl BmpFile {
     pub fn from_path(path: &str) -> Image {
         let mut data: Vec<u8> = Vec::new();
         if let Ok(mut file) = File::open(path) {
-            file.read_to_end(&mut data);
+            let _ = file.read_to_end(&mut data);
         }
         BmpFile::from_data(&data)
     }
@@ -89,9 +89,9 @@ impl BmpFile {
                     let blue = ((pixel_data & blue_mask) >> blue_shift) as u8;
                     let alpha = ((pixel_data & alpha_mask) >> alpha_shift) as u8;
                     if bytes == 3 {
-                        data.push(Color::rgb(red, green, blue));
+                        data.push(Color::rgb(red, green, blue).data);
                     } else if bytes == 4 {
-                        data.push(Color::rgba(red, green, blue, alpha));
+                        data.push(Color::rgba(red, green, blue, alpha).data);
                     }
                 }
             }
