@@ -148,7 +148,8 @@ filesystem/apps/%/main.bin: filesystem/apps/%/main.rs filesystem/apps/%/*.rs $(B
 filesystem/apps/%/main.bin: crates/orbutils/src/%/main.rs crates/orbutils/src/%/*.rs $(BUILD)/crt0.o $(BUILD)/libstd.rlib $(BUILD)/liborbclient.rlib $(BUILD)/liborbtk.rlib
 	$(RUSTC) $(RUSTCFLAGS) --crate-type bin -o $@ $<
 
-apps: filesystem/apps/editor/main.bin \
+apps: filesystem/apps/calculator/main.bin \
+	  filesystem/apps/editor/main.bin \
 	  filesystem/apps/file_manager/main.bin \
 	  filesystem/apps/orbtk/main.bin \
 	  filesystem/apps/player/main.bin \
@@ -167,21 +168,26 @@ filesystem/bin/%: crates/coreutils/src/bin/%.rs $(BUILD)/crt0.o $(BUILD)/libcore
 coreutils: \
 	filesystem/bin/basename \
 	filesystem/bin/cat \
+	filesystem/bin/clear \
 	filesystem/bin/cp \
 	filesystem/bin/du \
 	filesystem/bin/echo \
 	filesystem/bin/false \
 	filesystem/bin/free \
+	filesystem/bin/head \
 	filesystem/bin/ls \
 	filesystem/bin/mkdir \
+	filesystem/bin/mv \
 	filesystem/bin/ps \
 	filesystem/bin/pwd \
 	filesystem/bin/realpath \
+	filesystem/bin/reset \
 	filesystem/bin/rm \
 	filesystem/bin/rmdir \
 	filesystem/bin/seq \
 	filesystem/bin/shutdown \
 	filesystem/bin/sleep \
+	filesystem/bin/tail \
 	filesystem/bin/touch \
 	filesystem/bin/true \
 	filesystem/bin/wc \
@@ -201,7 +207,10 @@ binutils: \
 	filesystem/bin/hexdump \
 	filesystem/bin/strings
 
-filesystem/bin/%: crates/extrautils/src/bin/%.rs $(BUILD)/crt0.o $(BUILD)/libcoreutils.rlib
+$(BUILD)/libtermion.rlib: crates/termion/src/lib.rs crates/termion/src/*.rs $(BUILD)/libstd.rlib
+	$(RUSTC) $(RUSTCFLAGS) --crate-name termion --crate-type lib -o $@ $< --cfg 'feature="nightly"'
+
+filesystem/bin/%: crates/extrautils/src/bin/%.rs $(BUILD)/crt0.o $(BUILD)/libcoreutils.rlib $(BUILD)/libtermion.rlib
 	mkdir -p filesystem/bin
 	$(RUSTC) $(RUSTCFLAGS) --crate-type bin -o $@ $<
 
@@ -210,8 +219,17 @@ extrautils: \
 	filesystem/bin/cksum \
 	filesystem/bin/cur \
 	filesystem/bin/grep \
+	filesystem/bin/less \
 	filesystem/bin/rem
 	#TODO: filesystem/bin/mtxt
+
+filesystem/bin/%: crates/games/src/%/main.rs crates/games/src/%/*.rs $(BUILD)/crt0.o $(BUILD)/libcoreutils.rlib $(BUILD)/libtermion.rlib
+	mkdir -p filesystem/bin
+	$(RUSTC) $(RUSTCFLAGS) --crate-type bin -o $@ $<
+
+games: \
+	filesystem/bin/ice \
+	filesystem/bin/minesweeper
 
 filesystem/bin/%: crates/%/main.rs crates/%/*.rs $(BUILD)/crt0.o $(BUILD)/libstd.rlib
 	mkdir -p filesystem/bin
@@ -236,10 +254,10 @@ filesystem/bin/launcher: crates/orbutils/src/launcher/main.rs crates/orbutils/sr
 	mkdir -p filesystem/bin
 	$(RUSTC) $(RUSTCFLAGS) --crate-type bin -o $@ $<
 
-
 bins: \
 	coreutils \
 	extrautils \
+	games \
 	filesystem/bin/ansi-test \
 	filesystem/bin/c-test \
 	filesystem/bin/dosbox \
@@ -249,7 +267,9 @@ bins: \
   	filesystem/bin/ion \
 	filesystem/bin/launcher \
   	filesystem/bin/lua \
+  	filesystem/bin/luac \
   	filesystem/bin/login \
+  	filesystem/bin/minesweeper \
   	filesystem/bin/orbital \
 	filesystem/bin/std-test \
   	filesystem/bin/sdl-test \
@@ -263,7 +283,43 @@ initfs/redoxfsd: crates/redoxfs/scheme/main.rs crates/redoxfs/scheme/*.rs $(BUIL
 	mkdir -p initfs/
 	$(RUSTC) $(RUSTCFLAGS) --crate-type bin -o $@ $<
 
-build/initfs.gen: initfs/redoxfsd
+initfs/build-arch:
+	mkdir -p initfs/
+	echo $(ARCH) > $@
+
+initfs/build-branch:
+	mkdir -p initfs/
+	git rev-parse --abbrev-ref HEAD > $@
+
+initfs/build-cargo:
+	mkdir -p initfs/
+	cargo -V > $@
+
+initfs/build-date:
+	mkdir -p initfs/
+	date > $@
+
+initfs/build-host:
+	mkdir -p initfs/
+	uname -a > $@
+
+initfs/build-rustc:
+	mkdir -p initfs/
+	$(RUSTC) -V > $@
+
+initfs/build-rev:
+	mkdir -p initfs/
+	git rev-parse HEAD > $@
+
+build/initfs.gen: \
+		initfs/redoxfsd \
+		initfs/build-arch \
+		initfs/build-branch \
+		initfs/build-cargo \
+		initfs/build-date \
+		initfs/build-host \
+		initfs/build-rustc \
+		initfs/build-rev
 	echo 'use collections::BTreeMap;' > $@
 	echo 'pub fn gen() -> BTreeMap<&'"'"'static str, &'"'"'static [u8]> {' >> $@
 	echo '    let mut files: BTreeMap<&'"'"'static str, &'"'"'static [u8]> = BTreeMap::new();' >> $@
@@ -477,7 +533,8 @@ virtualbox: $(BUILD)/harddrive.bin
 	$(VBM) modifyvm Redox --uart1 0x3F8 4
 	$(VBM) modifyvm Redox --uartmode1 file $(BUILD)/serial.log
 	$(VBM) modifyvm Redox --usb on
-	$(VBM) modifyvm Redox --mouse usbtablet
+	$(VBM) modifyvm Redox --keyboard ps2
+	$(VBM) modifyvm Redox --mouse ps2
 	#$(VBM) modifyvm Redox --audio $(VB_AUDIO)
 	#$(VBM) modifyvm Redox --audiocontroller ac97
 	echo "Create Disk"
