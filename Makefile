@@ -145,14 +145,14 @@ filesystem/apps/%/main.bin: filesystem/apps/%/main.rs filesystem/apps/%/*.rs $(B
 filesystem/apps/%/main.bin: crates/orbutils/src/%/main.rs crates/orbutils/src/%/*.rs $(BUILD)/crt0.o $(BUILD)/libstd.rlib $(BUILD)/liborbclient.rlib $(BUILD)/liborbtk.rlib
 	$(RUSTC) $(RUSTCFLAGS) --crate-type bin -o $@ $<
 
-apps: filesystem/apps/calculator/main.bin \
-	  filesystem/apps/editor/main.bin \
+apps: filesystem/apps/editor/main.bin \
 	  filesystem/apps/file_manager/main.bin \
 	  filesystem/apps/orbtk/main.bin \
 	  filesystem/apps/player/main.bin \
 	  filesystem/apps/sodium/main.bin \
 	  filesystem/apps/terminal/main.bin \
 	  filesystem/apps/viewer/main.bin
+	  # filesystem/apps/calculator/main.bin
 
 $(BUILD)/libextra.rlib: crates/extra/src/lib.rs crates/extra/src/*.rs $(BUILD)/libstd.rlib
 	$(RUSTC) $(RUSTCFLAGS) --crate-name extra --crate-type lib -o $@ $<
@@ -183,13 +183,13 @@ coreutils: \
 	filesystem/bin/rmdir \
 	filesystem/bin/seq \
 	filesystem/bin/shutdown \
-	filesystem/bin/sleep \
 	filesystem/bin/tail \
 	filesystem/bin/touch \
 	filesystem/bin/true \
 	filesystem/bin/wc \
 	filesystem/bin/yes
-	#TODO: filesystem/bin/test
+	# filesystem/bin/test
+	# filesystem/bin/sleep
 
 $(BUILD)/libbinutils.rlib: crates/binutils/src/lib.rs crates/binutils/src/*.rs $(BUILD)/libextra.rlib
 	$(RUSTC) $(RUSTCFLAGS) --crate-name binutils --crate-type lib -o $@ $<
@@ -218,13 +218,13 @@ filesystem/bin/%: crates/extrautils/src/bin/%.rs $(BUILD)/crt0.o $(BUILD)/libext
 	$(RUSTC) $(RUSTCFLAGS) --crate-type bin -o $@ $<
 
 extrautils: \
-	filesystem/bin/calc \
 	filesystem/bin/cksum \
 	filesystem/bin/cur \
 	filesystem/bin/grep \
 	filesystem/bin/less \
 	filesystem/bin/mtxt \
 	filesystem/bin/rem
+	# filesystem/bin/calc
 
 filesystem/bin/%: crates/games/src/%/main.rs crates/games/src/%/*.rs $(BUILD)/crt0.o $(BUILD)/libextra.rlib $(BUILD)/libtermion.rlib
 	mkdir -p filesystem/bin
@@ -233,8 +233,8 @@ filesystem/bin/%: crates/games/src/%/main.rs crates/games/src/%/*.rs $(BUILD)/cr
 games: \
 	filesystem/bin/ice \
 	filesystem/bin/minesweeper \
-	filesystem/bin/rusthello \
 	filesystem/bin/snake
+	# filesystem/bin/rusthello
 
 filesystem/bin/%: crates/%/main.rs crates/%/*.rs $(BUILD)/crt0.o $(BUILD)/libstd.rlib
 	mkdir -p filesystem/bin
@@ -399,7 +399,7 @@ filesystem/man:
 
 $(BUILD)/libcore.rlib: rust/src/libcore/lib.rs
 	$(MKDIR) -p $(BUILD)
-	$(RUSTC) $(RUSTCFLAGS) -o $@ $<
+	$(RUSTC) $(RUSTCFLAGS) --cfg disable_float -o $@ $<
 
 $(BUILD)/liballoc_system.rlib: liballoc_system/lib.rs $(BUILD)/libcore.rlib
 	$(RUSTC) $(RUSTCFLAGS) -o $@ $<
@@ -417,7 +417,7 @@ $(BUILD)/libgetopts.rlib: rust/src/libgetopts/lib.rs $(BUILD)/libserialize.rlib 
 	$(RUSTC) $(RUSTCFLAGS) -o $@ $<
 
 $(BUILD)/librand.rlib: rust/src/librand/lib.rs $(BUILD)/libcore.rlib $(BUILD)/liballoc.rlib $(BUILD)/librustc_unicode.rlib $(BUILD)/libcollections.rlib
-	$(RUSTC) $(RUSTCFLAGS) -o $@ $<
+	$(RUSTC) $(RUSTCFLAGS) --cfg disable_float -o $@ $<
 
 $(BUILD)/liblibc.rlib: rust/src/liblibc/src/lib.rs $(BUILD)/libcore.rlib
 	$(RUSTC) $(RUSTCFLAGS) -o $@ $<
@@ -426,7 +426,7 @@ $(BUILD)/librealstd.rlib: rust/src/libstd/lib.rs $(BUILD)/libcore.rlib $(BUILD)/
 	$(RUSTC) $(RUSTCFLAGS) --cfg unix --crate-type rlib -o $@ $<
 
 $(BUILD)/libstd.rlib: libstd/src/lib.rs libstd/src/*.rs libstd/src/*/*.rs libstd/src/*/*/*.rs $(BUILD)/libcore.rlib $(BUILD)/liballoc.rlib $(BUILD)/libcollections.rlib $(BUILD)/librand.rlib $(BUILD)/libsystem.rlib
-	$(RUSTC) $(RUSTCFLAGS) -o $@ $<
+	$(RUSTC) $(RUSTCFLAGS) --cfg disable_float -o $@ $<
 
 $(BUILD)/liborbclient.rlib: crates/orbclient/src/lib.rs crates/orbclient/src/*.rs crates/orbclient/src/*/*.rs $(BUILD)/libstd.rlib
 	$(RUSTC) $(RUSTCFLAGS) -o $@ $<
