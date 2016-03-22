@@ -70,6 +70,8 @@ pub fn execute_thread(context_ptr: *mut Context, entry: usize, mut args: Vec<Str
             }
         }
 
+        context.iopl = 0;
+
         context.regs = Regs::default();
         context.regs.sp = context.kernel_stack + CONTEXT_STACK_SIZE - 128;
 
@@ -133,7 +135,7 @@ pub fn execute(mut args: Vec<String>) -> Result<usize> {
             let mut bytes = [0; 4096];
             match resource.read(&mut bytes) {
                 Ok(0) => break 'reading,
-                Ok(count) => vec.push_all(bytes.get_slice(.. count)),
+                Ok(count) => vec.extend_from_slice(bytes.get_slice(.. count)),
                 Err(err) => return Err(err)
             }
         }
