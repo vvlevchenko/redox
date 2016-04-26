@@ -6,7 +6,7 @@
 	url = https://github.com/redox-os/ion.git
 [submodule "filesystem/apps/sodium"]
 	path = filesystem/apps/sodium
-	url = https://github.com/redox-os/sodium.git
+	url = git@github.com:vvlevchenko/sodium.git
 [submodule "crates/orbtk"]
 	path = crates/orbtk
 	url = https://github.com/redox-os/orbtk
@@ -18,7 +18,7 @@
 	url = https://github.com/redox-os/libc.git
 [submodule "crates/orbclient"]
 	path = crates/orbclient
-	url = https://github.com/redox-os/orbclient
+	url = git@github.com:vvlevchenko/orbclient.git
 [submodule "crates/orbutils"]
 	path = crates/orbutils
 	url = https://github.com/redox-os/orbutils.git
